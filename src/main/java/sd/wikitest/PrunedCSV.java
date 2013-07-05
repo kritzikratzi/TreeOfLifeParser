@@ -46,9 +46,9 @@ public class PrunedCSV
 {
 	static boolean shout = false;
 	
-	static int max = 50000000; 
 	static int count = 0;  
 	static Hashtable<String, String> rel = new Hashtable<String, String>();
+	static Hashtable<String, String> redirects = new Hashtable<String, String>(); 
 	
 	// if there's a taxo headline the wikipage usually looks like this: 
 	//   ==Taxonavigation==
@@ -110,10 +110,16 @@ public class PrunedCSV
     	BZip2CompressorInputStream zip = new BZip2CompressorInputStream( new FileInputStream( bz2Filename ), true ); 
     	Reader reader = new InputStreamReader( zip );
     	
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+    	// Step 1: manualy create the root of the tree
     	// i'm not quite certain about this bit, i couldn't figure out what system wikispecies is using so 
     	// i came up with this through http://en.wikipedia.org/wiki/Kingdom_(biology)
     	// an infix of :hansi: means wiki species has no such page, 
     	// but i need this to make the tree into ... a tree. 
+    	// ps barbara fischer says its alright, and she knows her shit, 
+    	// so i'll leave it at this :) 
     	
     	// two main groups: viruses, all of life 
     	rel.put( "template:hansi:life", "template:hansi:root" );
@@ -133,7 +139,11 @@ public class PrunedCSV
     	rel.put( "template:bacteria", "template:hansi:prokaryota" ); 
     	
     	
-//    	String bz2Filename = "empty.xml";  
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+    	// Step 2: parse the wiki species dump
+    	
     	IArticleFilter handler = new IArticleFilter() {
 			public void process( WikiArticle article, Siteinfo site ) throws SAXException {
 				if( article.getText() == null ){
@@ -142,13 +152,11 @@ public class PrunedCSV
 				}
 				
 				String title = article.getTitle().toLowerCase(); 
-				if( title.indexOf( "plantae" ) == 0 ){
-					System.out.println( "PLAAAANNNNZZZZ" ); 
-				}
 				
 				// remove all images from the text before doing anything. they sortof annoy us! 
 				String text = imageRemover.matcher( article.getText().toLowerCase() ).replaceAll( "" );
 				
+				// normal article
 				if( article.getNamespace().equals( "" ) ){
 					// do we have taxo info?
 					Matcher matcher = articleTaxo.matcher( text ); 
@@ -159,13 +167,14 @@ public class PrunedCSV
 						addRelToArticle( title, matcher.group( 1 ) ); 
 					}
 					else if( ( matcher = redirect.matcher( text )  ).find() ){
-//						if( shout ) System.out.println( "redir(ignore): " + title + " -> " + matcher.group( 1 ) );
-						addRelToArticle( title, matcher.group( 1 ) ); 
+//						addRelToArticle( title, matcher.group( 1 ) );
+						redirects.put( title, matcher.group( 1 ).trim() ); 
 					}
 					else{
 						if( shout ) System.err.println( "skip: " + title ); 
 					}
 				}
+				// template
 				else if( article.getNamespace().equals( "Template" ) ){
 					Matcher matcher = templateTaxo.matcher( mainLinkRemover.matcher( text ).replaceAll( "" ) ); 
 					if( matcher.find() ){
@@ -173,7 +182,8 @@ public class PrunedCSV
 					}
 					else if( ( matcher = redirect.matcher( text )  ).find() ){
 //						if( shout ) System.out.println( "redir(ignore): " + title + " -> " + matcher.group( 1 ) );
-						addRelToArticle( title, matcher.group( 1 ) ); 
+//						addRelToArticle( title, matcher.group( 1 ) );
+						redirects.put( title, matcher.group( 1 ).trim() ); 
 					}
 					else if( ( matcher = templateAltTaxo.matcher( text ) ).find() ){
 						addRelToTemplate( title, matcher.group( 1 ) ); 
@@ -193,16 +203,36 @@ public class PrunedCSV
 		wxp.parse();
 		
 		
-		Hashtable<String,Set<String>> bottomUp = new Hashtable<String, Set<String>>(); 
-		for( Map.Entry<String, String> entry : rel.entrySet() ){
-			String child = entry.getKey(); 
-			String parent = entry.getValue();
-			Set<String> successors = bottomUp.get( parent ); 
-			if( successors == null ){
-				bottomUp.put( parent, successors = new HashSet<String>() );  
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		// Step 3: Replace all redirects
+		// note that the redirect value can always only occur on 
+		// the right sight of the child->parent hashmap, because 
+		// redirects are not added to the rel table.
+		// also this will cause some funky results with double redirects, 
+		// lets just hope there are none. 
+		int replaced = 0; 
+		for( Entry<String, String> entry : rel.entrySet() ){
+			String redirectTo = redirects.get( entry.getValue() );
+			if( redirectTo != null ){
+				entry.setValue( redirectTo );
+				replaced ++; 
 			}
-			successors.add( child ); 
 		}
+		
+		System.out.println( "Replaced " + replaced + " redirects" ); 
+		System.out.println( "A total of " + redirects.size() + " are stored in the dump file" ); 
+		
+		
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		// Step 4: invert the tree (before we stored as child -> parent, 
+		// this creates a parent->children tree)
+		// at the same time we get rid of all children that are not 
+		// connected somehow to template:hansi:root. 
+		Hashtable<String,Set<String>> bottomUp = buildTree( rel ); 
 		
 		count = 0; 
 		LinkedList<String> fringe = new LinkedList<String>(); 
@@ -227,55 +257,75 @@ public class PrunedCSV
 		}
 
 		
-//		System.out.println( "Backtrack from root..." );
-//		Hashtable<String,String> disconnected = new Hashtable<String,String>( rel );
-//		Stack<String> fringe = new Stack<String>();
-//		fringe.add( "template:hansi:root" );
-//		while( !fringe.isEmpty() ){
-//			String dad = fringe.pop(); 
-//			Iterator<Map.Entry<String, String>> it = disconnected.entrySet().iterator(); 
-//			while( it.hasNext() ){
-//				Map.Entry<String, String> entry = it.next(); 
-//				if( entry.getValue().equals( dad ) ){
-//					fringe.add( entry.getKey() );
-//					it.remove(); 
-//				}
-//			}
-//			System.out.println( "  fringe size: " + fringe.size() + ", possibly disconnected: " + disconnected.size() ); 
-//		}
-//		
-//		System.out.println( "Prune disconnected..." ); 
-//		for( Map.Entry<String, String> entry : disconnected.entrySet() ){
-//			System.err.println( "remove " + entry.getKey() + " -> " + entry.getValue() );
-//			rel.remove( entry.getKey() ); 
-//		}
 		
-		count = 0; 
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		// Step 5: Madness breaks out. There are many relations 
+		// like thing -> template:thing, but template:thing has no
+		// other children so we'd like to simply removing template:thing 
+		// and put thing in its place. 
+		System.out.println( "Finding redundant template entries" );
+		HashSet<String> redundant = new HashSet<>();
 		
-		System.out.println( "Building index..." );
-		Hashtable<String, Integer> indices = new Hashtable<String, Integer>();
-		indices.put( "template:hansi:root", -1 ); 
-		for( Map.Entry<String, String> entry : rel.entrySet() ){
-			indices.put( entry.getKey(), count ++ ); 
+		for( Entry<String, Set<String>> entry : buildTree( rel ).entrySet() ){
+			String dad = entry.getKey(); 
+			for( String kid : entry.getValue() ){
+				if( dad.equals( "template:" + kid ) ){
+//					System.out.println( "Ah, pointless: " + entry.getKey() + " † " + entry.getValue().iterator().next() );
+					if( dad.indexOf( ":hansi:" ) > 0 ){
+						System.err.println( "Protect: " + kid + "/" + dad ); 
+					}
+					else{
+						redundant.add( dad ); 
+					}
+				}
+			}
 		}
 		
+		System.out.println( "Old rel size: " + rel.size() ); 
+		System.out.println( "Getting rid of " + redundant.size() + " redundant template entries" );
+		for( Entry<String, String> entry : rel.entrySet() ){
+			if( redundant.contains( entry.getValue() ) ){
+				// link to the new dad (no template: prefix)
+				entry.setValue( entry.getValue().substring( "template:".length() ) ); 
+			}
+			if( redundant.contains( "template:" + entry.getKey() ) ){
+				// link to the previous dads parent
+				entry.setValue( rel.get( "template:" + entry.getKey() ) ); 
+			}
+		}
+		for( String obsolete : redundant ){
+			rel.remove( obsolete ); 
+		}
+		System.out.println( "New rel size: " + rel.size() ); 
+
+		
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
+
+		
+		count = 0; 
 		System.out.println( "Writing CSV..." ); 
 		PrintWriter out = new PrintWriter( "pruned-names.csv" ); 
-		PrintWriter outNum = new PrintWriter( "pruned-nums.csv" );
 		
 		for( Map.Entry<String, String> entry : rel.entrySet() ){
 			count ++;
-			out.println( entry.getKey() + "†" + entry.getValue() );
-			outNum.println( indices.get(entry.getKey()) + "†" + indices.get(entry.getValue()) );
+			out.println( entry.getKey() + "$" + entry.getValue() );
 		}
 		
-		System.out.println( "wrote " + count + "/" + max ); 
+		System.out.println( "wrote " + count + " of ~500k" ); 
 		
 		out.close(); 
-		outNum.close(); 
     }
     
     
+    /**
+     * 
+     * @param a A normal article title 
+     * @param b A template 
+     */
     static void addRelToTemplate( String a, String b ){
     	Matcher matcher = templateExtractor.matcher( b ); 
     	if( matcher.find() ){
@@ -287,9 +337,37 @@ public class PrunedCSV
     	}
     }
     
+    /**
+     * This looks really fucking pointless to me now, no clue why this ever 
+     * became its own method. i'll leave it here to praise abstraction hell. 
+     * @param a
+     * @param b
+     */
     static void addRelToArticle( String a, String b ){
     	rel.put( a,  b.trim() ); 
 		if( shout ) System.out.println( a + " -> " + b ); 
     }
     
+    
+    /**
+     * flips a tree from a child->parent to a 
+     * parent->children structure. 
+     * @param rel
+     * @return
+     */
+	public static Hashtable<String, Set<String>> buildTree( Map<String, String> rel ){
+		Hashtable<String, Set<String>> result = new Hashtable<String, Set<String>>(); 
+		for( Map.Entry<String, String> entry : rel.entrySet() ){
+			String child = entry.getKey(); 
+			String parent = entry.getValue();
+			Set<String> successors = result.get( parent ); 
+			if( successors == null ){
+				result.put( parent, successors = new HashSet<String>() );  
+			}
+			successors.add( child ); 
+		}
+		
+		return result;
+	}
+
 }
