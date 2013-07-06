@@ -286,13 +286,23 @@ public class PrunedCSV
 		System.out.println( "Old rel size: " + rel.size() ); 
 		System.out.println( "Getting rid of " + redundant.size() + " redundant template entries" );
 		for( Entry<String, String> entry : rel.entrySet() ){
-			if( redundant.contains( entry.getValue() ) ){
-				// link to the new dad (no template: prefix)
-				entry.setValue( entry.getValue().substring( "template:".length() ) ); 
-			}
+			// we've found the xxx article template:xxx
+			// the chain xxx -> template:xxx -> parent 
+			// will be replaced with xxx -> parent
 			if( redundant.contains( "template:" + entry.getKey() ) ){
 				// link to the previous dads parent
-				entry.setValue( rel.get( "template:" + entry.getKey() ) ); 
+				String old = entry.getValue(); 
+				entry.setValue( rel.get( "template:" + entry.getKey() ) );
+//				System.out.println( "2Swap dad of " + entry.getKey() + ": " + old + " -> " + entry.getValue() ); 
+			}
+			// an article points to a redundant template:xxx tag
+			// note that this is not an else if, because the above replacement 
+			// might lead us to yet another useless template:xxx tag
+			if( redundant.contains( entry.getValue() ) ){
+				// link to the new dad (no template: prefix)
+				String old = entry.getValue(); 
+				entry.setValue( entry.getValue().substring( "template:".length() ) ); 
+//				System.out.println( "1Swap dad of " + entry.getKey() + ": " + old + " -> " + entry.getValue() ); 
 			}
 		}
 		for( String obsolete : redundant ){

@@ -72,6 +72,8 @@ public class DoublePruner {
 			}
 		}
 		System.out.println( "Remaining template tags: " + templates ); 
+		
+		in.close(); 
 	}
 	
 

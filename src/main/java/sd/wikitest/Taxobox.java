@@ -15,9 +15,9 @@ public class Taxobox {
 		"regnum", 
 		"divisio ", 
 		"classis ", 
-		"ordo ", 
+		"ordo", 
 		"familia ", 
-		"genus ", 
+		"genus", 
 		"species"
 	}; 
 	

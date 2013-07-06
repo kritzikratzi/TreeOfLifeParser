@@ -67,13 +67,6 @@ public class EnWiki
 //				String text = imageRemover.matcher( article.getText().toLowerCase() ).replaceAll( "" );
 				String text = article.getText(); 
 				
-				String x = "tNamespace().equa( \"\" ) ls( \"\" ) && text.indexOf( \"{{Taxobox\" ) > 0 ){\n" + 
-						"					System.out.println( \"ANIMAL: \" + title ); \n" + 
-						"					// do we have taxo info?\n" + 
-						"					List<TemplateInfo> templates = Utils.findTemplates( text, \"Taxobox\" );\n" + 
-						"					for( TemplateInfo info : templates ){\n" + 
-						"						System.out.println( \"Template: \" + info.namedParams.get( \"name\" ) );\n" + 
-						"						System"; 
 				if( article.getNamespace().equals( "" ) && text.indexOf( "{{Taxobox" ) > 0 ){
 					System.out.println( "ANIMAL: " + title ); 
 					// do we have taxo info?
